@@ -9,6 +9,8 @@ on:
         description: "Опубликовать прямо сейчас, не дожидаясь 11:00"
         type: boolean
         default: true
+permissions:
+  contents: write
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -30,3 +32,12 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main
         run: python post.py ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
+      - name: Keep schedule alive (GitHub отключает cron после 60 дней без коммитов)
+        if: always()
+        run: |
+          date -u +"%Y-%m-%d %H:%M UTC" > last_run.txt
+          git config user.name "adposter-bot"
+          git config user.email "adposter-bot@users.noreply.github.com"
+          git add last_run.txt
+          git commit -m "last run $(cat last_run.txt)" || exit 0
+          git push
