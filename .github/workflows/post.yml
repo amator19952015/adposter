@@ -1,0 +1,32 @@
+name: Daily ad post
+on:
+  schedule:
+    - cron: "5 8 * * *"   # 11:05 по Бухаресту летом (UTC+3)
+    - cron: "5 9 * * *"   # 11:05 по Бухаресту зимой (UTC+2)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Опубликовать прямо сейчас, не дожидаясь 11:00"
+        type: boolean
+        default: true
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install telethon
+      - name: Publish
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          TG_GROUP: ${{ secrets.TG_GROUP }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          RAW_BASE: https://raw.githubusercontent.com/${{ github.repository }}/main
+        run: python post.py ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '--force' || '' }}
