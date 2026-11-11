@@ -67,10 +67,39 @@ async def telegram(img, text):
             privacy_rules=[types.InputPrivacyValueAllowAll()], caption=text, period=86400))
         print("telegram story: ok")
 
-def main():
+TARGET = (11, 5)      # во сколько публикуем (Бухарест)
+EARLIEST_MIN = 50     # раньше чем за 50 минут до цели не ждём (слишком ранний запуск cron — пропускаем)
+MARKER = HERE / "posted.txt"   # дата последней публикации, защита от двойного поста
+
+def wait_for_slot():
+    """GitHub запускает cron с опозданием, поэтому запуск идёт заранее, а скрипт ждёт ровно до 11:05.
+    Возвращает False, если сегодня публиковать не нужно (уже опубликовано / слишком рано / слишком поздно)."""
     now = datetime.datetime.now(TZ)
-    if "--force" not in sys.argv and now.hour != 11:
-        print(f"local time {now:%H:%M}, not 11:xx, skipping"); return
+    if MARKER.exists() and MARKER.read_text().strip() == str(now.date()):
+        print(f"{now.date()}: already posted today, skipping"); return False
+    target = now.replace(hour=TARGET[0], minute=TARGET[1], second=0, microsecond=0)
+    if now < target:
+        left = (target - now).total_seconds()
+        if left > EARLIEST_MIN * 60:
+            print(f"local time {now:%H:%M}: too early, skipping"); return False
+        print(f"local time {now:%H:%M}: waiting {int(left)}s until {target:%H:%M}")
+        time.sleep(left)
+    elif now.hour != TARGET[0]:
+        print(f"local time {now:%H:%M}: window missed, skipping"); return False
+    return True
+
+async def telegram_alert(msg):
+    """Если что-то не опубликовалось — пишем себе в «Избранное» в Телеграме."""
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    async with TelegramClient(StringSession(env("TG_SESSION")), int(env("TG_API_ID")), env("TG_API_HASH")) as c:
+        await c.send_message("me", msg)
+
+def main():
+    force = "--force" in sys.argv
+    if not force and not wait_for_slot():
+        return
+    now = datetime.datetime.now(TZ)
     img = pick_image(now.date())
     text = (HERE / "text.txt").read_text().strip()
     image_url = f"{RAW_BASE}/images/{img.name}"
@@ -90,7 +119,13 @@ def main():
             fn()
         except Exception as e:
             print(f"ERROR {name}: {e}"); errors.append(name)
+    if not only:
+        MARKER.write_text(str(now.date()))   # отметка: сегодня уже публиковали (даже если часть шагов упала — без дублей в Телеграм)
     if errors:
+        try:
+            asyncio.run(telegram_alert(f"⚠️ AdPoster {now:%d.%m %H:%M}: не опубликовано — {', '.join(errors)}. Лог: GitHub → adposter → Actions"))
+        except Exception as e:
+            print("alert failed:", e)
         sys.exit("failed: " + ", ".join(errors))
 
 if __name__ == "__main__":
