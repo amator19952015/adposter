@@ -1,8 +1,11 @@
 name: Daily ad post
 on:
   schedule:
-    - cron: "5 8 * * *"   # 11:05 по Бухаресту летом (UTC+3)
-    - cron: "5 9 * * *"   # 11:05 по Бухаресту зимой (UTC+2)
+    # GitHub запускает cron с опозданием (бывает 30-50 минут), поэтому стартуем заранее,
+    # а post.py сам ждёт ровно до 11:05 по Бухаресту. Лишние запуски сами себя пропускают.
+    - cron: "40 7 * * *"   # лето (UTC+3): 10:40 / зима (UTC+2): 09:40 - слишком рано, пропуск
+    - cron: "40 8 * * *"   # зима: 10:40 - основной / лето: 11:40 - запасной
+    - cron: "10 9 * * *"   # зима: 11:10 - запасной, если основной не сработал
   workflow_dispatch:
     inputs:
       force:
@@ -11,10 +14,13 @@ on:
         default: true
 permissions:
   contents: write
+concurrency:
+  group: ad-post
+  cancel-in-progress: false
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,5 +45,6 @@ jobs:
           git config user.name "adposter-bot"
           git config user.email "adposter-bot@users.noreply.github.com"
           git add last_run.txt
+          git add posted.txt 2>/dev/null || true
           git commit -m "last run $(cat last_run.txt)" || exit 0
           git push
